@@ -193,10 +193,41 @@ object HttpMiddleware {
   def basicAuth[R, E](u: String, p: String): HttpMiddleware[R, E] =
     basicAuth((user, password) => (user == u) && (password == p))
 
-  def addCookie(cookie: Cookie): HttpMiddleware[Any, Nothing]       =
+  /*
+   * Creates a middleware to add set-cookie header in response
+   * */
+  def addCookie(cookie: Cookie): HttpMiddleware[Any, Nothing] =
     HttpMiddleware.addHeader(HttpHeaderNames.SET_COOKIE.toString, cookie.encode)
+
+  /*
+   * Creates a middleware to add set-cookie header in response
+   * */
   def addCookieM(cookie: UIO[Cookie]): HttpMiddleware[Any, Nothing] =
     patchM((_, _) => cookie.map(c => Patch.addHeader(HttpHeaderNames.SET_COOKIE.toString, c.encode)))
+
+  /*
+   * Creates a middleware to validate CSRF token from header and cookie
+   * */
+  def csrf(headerName: String, cookieName: String) = {
+    def getCSRFCookies(headers: List[Header], cookieName: String): Option[String] =
+      headers
+        .find(p => contentEqualsIgnoreCase(p.name, HttpHeaderNames.COOKIE))
+        .flatMap(a => Cookie.decodeRequestCookie(a.value.toString).toOption)
+        .flatMap(cookies => cookies.find(_.name == cookieName))
+        .map(_.content)
+    def getCSRFHeaders(headers: List[Header], headerName: String): Option[String] = headers
+      .find(p => contentEqualsIgnoreCase(p.name, headerName))
+      .map(_.value.toString)
+    HttpMiddleware.make((_, _, headers) =>
+      (getCSRFHeaders(headers, headerName), getCSRFCookies(headers, cookieName)) match {
+        case (Some(headerValue), Some(cookieValue)) =>
+          if (headerValue == cookieValue)
+            true
+          else false
+        case _                                      => false
+      },
+    )((_, _, verified) => if (verified) Patch.empty else Patch.setStatus(Status.UNAUTHORIZED))
+  }
 
   /**
    * Add log status, method, url and time taken from req to res
@@ -260,26 +291,27 @@ object HttpMiddleware {
   def removeHeader(name: String): HttpMiddleware[Any, Nothing] =
     patch((_, _) => Patch.removeHeaders(List(name)))
 
+  private def equalsIgnoreCase(a: Char, b: Char) = a == b || toLowerCase(a) == toLowerCase(b)
+  private def contentEqualsIgnoreCase(a: CharSequence, b: CharSequence): Boolean = {
+    if (a == b)
+      true
+    else if (a.length() != b.length())
+      false
+    else if (a.isInstanceOf[AsciiString]) {
+      a.asInstanceOf[AsciiString].contentEqualsIgnoreCase(b)
+    } else if (b.isInstanceOf[AsciiString]) {
+      b.asInstanceOf[AsciiString].contentEqualsIgnoreCase(a)
+    } else {
+      (0 until a.length()).forall(i => equalsIgnoreCase(a.charAt(i), b.charAt(i)))
+    }
+  }
+
   /**
    * Creates a middleware for Cross-Origin Resource Sharing (CORS).
    * @see
    *   https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS
    */
   def cors[R, E](config: CORSConfig = DefaultCORSConfig): HttpMiddleware[R, E] = {
-    def equalsIgnoreCase(a: Char, b: Char)                                 = a == b || toLowerCase(a) == toLowerCase(b)
-    def contentEqualsIgnoreCase(a: CharSequence, b: CharSequence): Boolean = {
-      if (a == b)
-        true
-      else if (a.length() != b.length())
-        false
-      else if (a.isInstanceOf[AsciiString]) {
-        a.asInstanceOf[AsciiString].contentEqualsIgnoreCase(b)
-      } else if (b.isInstanceOf[AsciiString]) {
-        b.asInstanceOf[AsciiString].contentEqualsIgnoreCase(a)
-      } else {
-        (0 until a.length()).forall(i => equalsIgnoreCase(a.charAt(i), b.charAt(i)))
-      }
-    }
     def getHeader(headers: List[Header], headerName: CharSequence): Option[Header]      =
       headers.find(h => contentEqualsIgnoreCase(h.name, headerName))
     def allowCORS(origin: Header, acrm: Method): Boolean                                =

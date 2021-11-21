@@ -1,5 +1,6 @@
 package zhttp.middleware
 
+import io.netty.handler.codec.http.HttpHeaderNames
 import zhttp.http._
 import zhttp.http.middleware.HttpMiddleware
 import zhttp.internal.HttpAppTestExtensions
@@ -148,6 +149,36 @@ object HttpMiddlewareSpec extends DefaultRunnableSpec with HttpAppTestExtensions
             assertM(app(Request()).map(res => res.headers.filter(h => h.name == "set-cookie")))(
               equalTo(List(Header("set-cookie", "test=testValue"))),
             )
+          }
+      } +
+      suite("CSRF middleware") {
+        testM("should give unauthorized if token is not present in header") {
+          val app = HttpApp.ok @@ csrf("x-token", "token")
+          assertM(
+            app(Request(headers = List(Header(HttpHeaderNames.COOKIE, Cookie("token", "secret").encode)))).map(res =>
+              res.status,
+            ),
+          )(equalTo(Status.UNAUTHORIZED))
+        } +
+          testM("should give OK if token present in header matches token present in cookie") {
+            val app = HttpApp.ok @@ csrf("x-token", "token")
+            assertM(
+              app(
+                Request(headers =
+                  List(Header(HttpHeaderNames.COOKIE, Cookie("token", "secret").encode), Header("x-token", "secret")),
+                ),
+              ).map(res => res.status),
+            )(equalTo(Status.OK))
+          } +
+          testM("should give unauthorized if token is present in header but doesn't match with token cookie") {
+            val app = HttpApp.ok @@ csrf("x-token", "token")
+            assertM(
+              app(
+                Request(headers =
+                  List(Header(HttpHeaderNames.COOKIE, Cookie("token", "secret").encode), Header("x-token", "secret1")),
+                ),
+              ).map(res => res.status),
+            )(equalTo(Status.UNAUTHORIZED))
           }
       }
 
