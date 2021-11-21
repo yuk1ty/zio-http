@@ -193,6 +193,11 @@ object HttpMiddleware {
   def basicAuth[R, E](u: String, p: String): HttpMiddleware[R, E] =
     basicAuth((user, password) => (user == u) && (password == p))
 
+  def addCookie(cookie: Cookie): HttpMiddleware[Any, Nothing]       =
+    HttpMiddleware.addHeader(HttpHeaderNames.SET_COOKIE.toString, cookie.encode)
+  def addCookieM(cookie: UIO[Cookie]): HttpMiddleware[Any, Nothing] =
+    patchM((_, _) => cookie.map(c => Patch.addHeader(HttpHeaderNames.SET_COOKIE.toString, c.encode)))
+
   /**
    * Add log status, method, url and time taken from req to res
    */

@@ -135,6 +135,20 @@ object HttpMiddlewareSpec extends DefaultRunnableSpec with HttpAppTestExtensions
               assertM(app(Request().addHeaders(List(basicHF))))(isSome)
             }
         }
+      } +
+      suite("add cookie middleware") {
+        testM("should add set-cookie header") {
+          val app = HttpApp.ok @@ addCookie(Cookie("test", "testValue"))
+          assertM(app(Request()).map(res => res.headers.filter(h => h.name == "set-cookie")))(
+            equalTo(List(Header("set-cookie", "test=testValue"))),
+          )
+        } +
+          testM("should add set cookie header with value produced by effect") {
+            val app = HttpApp.ok @@ addCookieM(UIO(Cookie("test", "testValue")))
+            assertM(app(Request()).map(res => res.headers.filter(h => h.name == "set-cookie")))(
+              equalTo(List(Header("set-cookie", "test=testValue"))),
+            )
+          }
       }
 
   }
