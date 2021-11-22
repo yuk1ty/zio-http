@@ -137,7 +137,7 @@ object HttpMiddlewareSpec extends DefaultRunnableSpec with HttpAppTestExtensions
             }
         }
       } +
-      suite("add cookie middleware") {
+      suite("addCookie middleware") {
         testM("should add set-cookie header") {
           val app = HttpApp.ok @@ addCookie(Cookie("test", "testValue"))
           assertM(app(Request()).map(res => res.headers.filter(h => h.name == "set-cookie")))(
@@ -152,14 +152,24 @@ object HttpMiddlewareSpec extends DefaultRunnableSpec with HttpAppTestExtensions
           }
       } +
       suite("CSRF middleware") {
-        testM("should give unauthorized if token is not present in header") {
+        testM("should give forbidden if token is not present in header") {
           val app = HttpApp.ok @@ csrf("x-token", "token")
           assertM(
             app(Request(headers = List(Header(HttpHeaderNames.COOKIE, Cookie("token", "secret").encode)))).map(res =>
               res.status,
             ),
-          )(equalTo(Status.UNAUTHORIZED))
+          )(equalTo(Status.FORBIDDEN))
         } +
+          testM("should give forbidden if token is present in header but doesn't match with token cookie") {
+            val app = HttpApp.ok @@ csrf("x-token", "token")
+            assertM(
+              app(
+                Request(headers =
+                  List(Header(HttpHeaderNames.COOKIE, Cookie("token", "secret").encode), Header("x-token", "secret1")),
+                ),
+              ).map(res => res.status),
+            )(equalTo(Status.FORBIDDEN))
+          } +
           testM("should give OK if token present in header matches token present in cookie") {
             val app = HttpApp.ok @@ csrf("x-token", "token")
             assertM(
@@ -169,16 +179,6 @@ object HttpMiddlewareSpec extends DefaultRunnableSpec with HttpAppTestExtensions
                 ),
               ).map(res => res.status),
             )(equalTo(Status.OK))
-          } +
-          testM("should give unauthorized if token is present in header but doesn't match with token cookie") {
-            val app = HttpApp.ok @@ csrf("x-token", "token")
-            assertM(
-              app(
-                Request(headers =
-                  List(Header(HttpHeaderNames.COOKIE, Cookie("token", "secret").encode), Header("x-token", "secret1")),
-                ),
-              ).map(res => res.status),
-            )(equalTo(Status.UNAUTHORIZED))
           }
       }
 

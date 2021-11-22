@@ -193,40 +193,40 @@ object HttpMiddleware {
   def basicAuth[R, E](u: String, p: String): HttpMiddleware[R, E] =
     basicAuth((user, password) => (user == u) && (password == p))
 
-  /*
+  /**
    * Creates a middleware to add set-cookie header in response
-   * */
+   */
   def addCookie(cookie: Cookie): HttpMiddleware[Any, Nothing] =
     HttpMiddleware.addHeader(HttpHeaderNames.SET_COOKIE.toString, cookie.encode)
 
-  /*
+  /**
    * Creates a middleware to add set-cookie header in response
-   * */
+   */
   def addCookieM(cookie: UIO[Cookie]): HttpMiddleware[Any, Nothing] =
     patchM((_, _) => cookie.map(c => Patch.addHeader(HttpHeaderNames.SET_COOKIE.toString, c.encode)))
 
-  /*
+  /**
    * Creates a middleware to validate CSRF token from header and cookie
-   * */
+   */
   def csrf(headerName: String, cookieName: String) = {
-    def getCSRFCookies(headers: List[Header], cookieName: String): Option[String] =
+    def getCSRFCookieValue(headers: List[Header], cookieName: String): Option[String] =
       headers
         .find(p => contentEqualsIgnoreCase(p.name, HttpHeaderNames.COOKIE))
         .flatMap(a => Cookie.decodeRequestCookie(a.value.toString).toOption)
         .flatMap(cookies => cookies.find(_.name == cookieName))
         .map(_.content)
-    def getCSRFHeaders(headers: List[Header], headerName: String): Option[String] = headers
+    def getCSRFHeaderValue(headers: List[Header], headerName: String): Option[String] = headers
       .find(p => contentEqualsIgnoreCase(p.name, headerName))
       .map(_.value.toString)
     HttpMiddleware.make((_, _, headers) =>
-      (getCSRFHeaders(headers, headerName), getCSRFCookies(headers, cookieName)) match {
+      (getCSRFHeaderValue(headers, headerName), getCSRFCookieValue(headers, cookieName)) match {
         case (Some(headerValue), Some(cookieValue)) =>
           if (headerValue == cookieValue)
             true
           else false
         case _                                      => false
       },
-    )((_, _, verified) => if (verified) Patch.empty else Patch.setStatus(Status.UNAUTHORIZED))
+    )((_, _, verified) => if (verified) Patch.empty else Patch.setStatus(Status.FORBIDDEN))
   }
 
   /**
