@@ -9,26 +9,29 @@ import zio.duration.Duration
 sealed trait SocketProtocol { self =>
   import SocketProtocol._
   def ++(other: SocketProtocol): SocketProtocol = SocketProtocol.Concat(self, other)
-  def javaConfig: WebSocketServerProtocolConfig = {
-    val b = WebSocketServerProtocolConfig.newBuilder().checkStartsWith(true).websocketPath("")
-    def loop(protocol: SocketProtocol): Unit = {
-      protocol match {
-        case Default                           => ()
-        case SubProtocol(name)                 => b.subprotocols(name)
-        case HandshakeTimeoutMillis(duration)  => b.handshakeTimeoutMillis(duration.toMillis)
-        case ForceCloseTimeoutMillis(duration) => b.forceCloseTimeoutMillis(duration.toMillis)
-        case ForwardCloseFrames                => b.handleCloseFrames(false)
-        case SendCloseFrame(status)            => b.sendCloseFrame(status.asJava)
-        case SendCloseFrameCode(code, reason)  => b.sendCloseFrame(new WebSocketCloseStatus(code, reason))
-        case ForwardPongFrames                 => b.dropPongFrames(false)
-        case Concat(a, b)                      =>
-          loop(a)
-          loop(b)
-      }
-      ()
+  def javaConfig(connectionUpgrade: ConnectionUpgrade = ServerUpgrade): WebSocketServerProtocolConfig = {
+    connectionUpgrade match {
+      case _ =>
+        val b = WebSocketServerProtocolConfig.newBuilder().checkStartsWith(true).websocketPath("")
+        def loop(protocol: SocketProtocol): Unit = {
+          protocol match {
+            case Default                           => ()
+            case SubProtocol(name)                 => b.subprotocols(name)
+            case HandshakeTimeoutMillis(duration)  => b.handshakeTimeoutMillis(duration.toMillis)
+            case ForceCloseTimeoutMillis(duration) => b.forceCloseTimeoutMillis(duration.toMillis)
+            case ForwardCloseFrames                => b.handleCloseFrames(false)
+            case SendCloseFrame(status)            => b.sendCloseFrame(status.asJava)
+            case SendCloseFrameCode(code, reason)  => b.sendCloseFrame(new WebSocketCloseStatus(code, reason))
+            case ForwardPongFrames                 => b.dropPongFrames(false)
+            case Concat(a, b)                      =>
+              loop(a)
+              loop(b)
+          }
+          ()
+        }
+        loop(self)
+        b.build()
     }
-    loop(self)
-    b.build()
   }
 }
 
@@ -42,6 +45,9 @@ object SocketProtocol {
   private case object ForwardPongFrames                                  extends SocketProtocol
   private final case class Concat(a: SocketProtocol, b: SocketProtocol)  extends SocketProtocol
   private case object Default                                            extends SocketProtocol
+  trait ConnectionUpgrade
+  case object ServerUpgrade                                              extends ConnectionUpgrade
+  case object ClientUpgrade                                              extends ConnectionUpgrade
 
   /**
    * Used to specify the websocket sub-protocol
